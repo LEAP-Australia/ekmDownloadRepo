@@ -10,27 +10,34 @@ namespace ekmDownloadRepo
     {
         static void Main(string[] args)
         {
+            if(args.Length != 6)
+            {
+                Console.Write("ekmDownloadRepo\n(c) LEAP Australia Pty Ltd 2017\n\nUsage:\n");
+                Console.Write("ekmDownloadRepo ekmHostAddress ekmUserName ekmUserPassword repoLocation localTargetDestination errorLog\n\n");
+                return;
+            }
             var hostName = args[0];
             var userName = args[1];
             var password = args[2];
             var rootRepoPath = args[3];
-            var rootDiskPath = args[4]; 
+            var rootDiskPath = args[4];
+            var failLogFile = args[5];
 
             try
             {
                 using (var ekmMgr = new ekmController(hostName, userName, password))
                 {
                     var filePaths = ekmMgr.recursivelyGetAllObjs(rootRepoPath);
-                    using(var failedObjFile = new System.IO.StreamWriter("failed.txt", false))
+                    using (var failedObjFile = new System.IO.StreamWriter(failLogFile, false))
                     {
-                        failedObjFile.WriteLine("===========Failed to obtain file list===========");
+                        failedObjFile.WriteLine("===================== Failed to Obtain File Info  =====================");
 
                         foreach (var file in ekmMgr.lastFailed)
                         {
                             failedObjFile.WriteLine(file);
                         }
 
-                        failedObjFile.WriteLine("===========            END          ===========");
+                        failedObjFile.WriteLine("============================ End of Section ===========================");
                     }
 
                     var failedToDownload = new List<string>();
@@ -54,22 +61,22 @@ namespace ekmDownloadRepo
                            
                     }
 
-                    using (var failedObjFile = new System.IO.StreamWriter("failed.txt", true))
+                    using (var failedObjFile = new System.IO.StreamWriter(failLogFile, true))
                     {
-                        failedObjFile.WriteLine("=========Failed to download file list==========");
+                        failedObjFile.WriteLine("======================= Failed to Download File =======================");
 
                         foreach (var file in failedToDownload)
                         {
                             failedObjFile.WriteLine(file);
                         }
 
-                        failedObjFile.WriteLine("===========            END          ===========");
+                        failedObjFile.WriteLine("============================ End of Section ===========================");
                     }
                 }
             }
             catch(Exception e)
             {
-                Console.WriteLine("Something went wrong. {0}", e.Message);
+                Console.Write("Something went wrong. This may help. Good luck\n\n{0}", e.Message);
             }
         }
     }
