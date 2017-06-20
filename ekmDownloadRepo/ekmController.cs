@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 using com.ansys.ingress.client.api;
 using com.ansys.ingress.connector.model;
@@ -17,20 +17,43 @@ namespace ekmDownloadRepo
         private AdministrationManager adminMgr;
         public List<string> lastFailed;
 
-        public ekmController(string hostname, string userName, string password)
+        private string hostName;
+        private string userName;
+        private string password;
+
+        private const uint limitCount = 10;
+
+        public ekmController(string hostname, string username, string passwd)
         {
-            try
+            hostName = hostname;
+            userName = username;
+            password = passwd;
+
+            Exception ex= null;
+
+            for(uint i =0; i<limitCount; ++i)
             {
-                conn = ConnectionFactory.Open(hostname, userName, password);
+                try
+                {
+                    createConnection();
+                    dataMgr = conn.GetDataManager();
+                    adminMgr = conn.GetAdministrationManager();
+                    lastFailed = new List<string>();
+                    return;
+                }
+                catch(Exception e)
+                {
+                    ex = e;
+                    Thread.Sleep(5000);
+                }
             }
-            catch(Exception e)
-            {
-                throw e;
-            }
-            
-            dataMgr = conn.GetDataManager();
-            adminMgr = conn.GetAdministrationManager();
-            lastFailed = new List<string>();
+
+            throw ex;
+        }
+
+        private void createConnection()
+        {
+            conn = ConnectionFactory.Open(hostName, userName, password);
         }
 
         public List<string> recursivelyGetAllObjs(string parentPath)
@@ -65,6 +88,18 @@ namespace ekmDownloadRepo
 
         public bool downloadFile(string repoPath, string diskPath)
         {
+            try
+            {
+                if (!(conn.IsOpen() && conn.IsLoggedIn() && conn.IsSessionValid()))
+                {
+                    createConnection();
+                }
+            }
+            catch(Exception e)
+            {
+                throw e;
+            }
+
             bool successful = true;
             var listener = new FileTransferListener();
             try
