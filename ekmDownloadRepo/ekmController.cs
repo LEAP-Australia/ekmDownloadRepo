@@ -21,6 +21,11 @@ namespace ekmDownloadRepo
         private string userName;
         private string password;
 
+        private bool workerToManagerNeedConnection = false;
+        private bool managerToWorkerConnIsValid = false;
+
+        private Thread connShop = null;
+
         private const uint limitCount = 10;
 
         public ekmController(string hostname, string username, string passwd)
@@ -28,36 +33,110 @@ namespace ekmDownloadRepo
             hostName = hostname;
             userName = username;
             password = passwd;
+            workerToManagerNeedConnection = true;
 
-            Exception ex= null;
-
-            for(uint i =0; i<limitCount; ++i)
-            {
-                try
-                {
-                    createConnection();
-                    dataMgr = conn.GetDataManager();
-                    adminMgr = conn.GetAdministrationManager();
-                    lastFailed = new List<string>();
-                    return;
-                }
-                catch(Exception e)
-                {
-                    ex = e;
-                    Thread.Sleep(5000);
-                }
-            }
-
-            throw ex;
+            connShop = new Thread(connectionManager);
+            connShop.Start();
+            lastFailed = new List<string>();
         }
 
-        private void createConnection()
+        //public void createConnection()
+        //{
+        //    Exception ex = null;
+
+        //    for (uint i = 0; i < limitCount; ++i)
+        //    {
+        //        try
+        //        {
+        //            conn = ConnectionFactory.Open(hostName, userName, password);
+        //            dataMgr = conn.GetDataManager();
+        //            adminMgr = conn.GetAdministrationManager();
+        //            lastFailed = new List<string>();
+        //            return;
+        //        }
+        //        catch (Exception e)
+        //        {
+        //            ex = e;
+        //            Console.WriteLine("**** Failed to Connect Attempting to reconnect in 5min for {0} out of {1} attempt", i, limitCount);
+        //            Thread.Sleep(300000);
+        //        }
+        //    }
+        //    throw ex;
+        //}
+
+        private void connectionManager()
         {
-            conn = ConnectionFactory.Open(hostName, userName, password);
+            var counter = 0;
+            while(true)
+            {
+                if(workerToManagerNeedConnection)
+                {
+                    bool connIsGood;
+
+                    try
+                    {
+                        connIsGood = conn != null && conn.IsOpen() && conn.IsSessionValid() && conn.IsLoggedIn();
+                    }
+                    catch
+                    {
+                        connIsGood = false;
+                    }
+
+                    if (connIsGood) // && conn.IsLoggedIn() 
+                    {
+                        managerToWorkerConnIsValid = true;
+                        counter = 0;
+                    }
+                    else
+                    {
+                        closeConnection();
+                        try
+                        {
+                            conn = ConnectionFactory.Open(hostName, userName, password);
+                            dataMgr = conn.GetDataManager();
+                            adminMgr = conn.GetAdministrationManager();
+                            managerToWorkerConnIsValid = true;
+                            counter = 0;
+                        }
+                        catch (ConnectionException e)
+                        {
+                            managerToWorkerConnIsValid = false;
+                            Console.WriteLine("**** Failed to Connect:\n{0}\nWill Try again", e.Message);
+                            counter++;
+                        }
+                        catch
+                        {
+                            managerToWorkerConnIsValid = false;
+                            break;
+                            
+                        }
+                    }
+                }
+                else
+                {
+                    closeConnection();
+                    managerToWorkerConnIsValid = false;
+                    break;
+                }
+                if (counter > 720)
+                    throw new Exception("Conn Manager timmed out");
+
+                System.Threading.Thread.Sleep(5000);
+            }
         }
 
         public List<string> recursivelyGetAllObjs(string parentPath)
         {
+            if (!connShop.IsAlive)
+            {
+                throw new Exception("Conn Manager has failed");
+            }
+
+            while(!managerToWorkerConnIsValid)
+            {
+                Thread.Sleep(1000);
+            }
+
             var objectPaths = new List<string>();
 
             var parentObj = dataMgr.FindByPath(parentPath);
@@ -73,8 +152,8 @@ namespace ekmDownloadRepo
                     }
                     else
                     {
-                        //Console.WriteLine(childObj.Path);
                         objectPaths.Add(childObj.Path);
+                        Console.WriteLine(childObj.Path);
                     }     
                 }
                 catch
@@ -83,30 +162,27 @@ namespace ekmDownloadRepo
                 }
                
             }
-            return objectPaths;
+            return objectPaths;            
         }
 
         public bool downloadFile(string repoPath, string diskPath)
         {
-            try
+            if (!connShop.IsAlive)
+                return false;
+
+            while (!managerToWorkerConnIsValid)
             {
-                if (!(conn.IsOpen() && conn.IsLoggedIn() && conn.IsSessionValid()))
-                {
-                    createConnection();
-                }
-            }
-            catch(Exception e)
-            {
-                throw e;
+                Thread.Sleep(1000);
             }
 
-            bool successful = true;
+            bool successful = false;
             var listener = new FileTransferListener();
             try
             {
-                var paths = new List<string>() {repoPath};
+                var paths = new List<string>() { repoPath };
                 dataMgr.Download(paths, diskPath, true, listener);
                 listener.WaitForTransferToEnd();
+                successful = true;
             }
             catch
             {
@@ -115,15 +191,27 @@ namespace ekmDownloadRepo
             return successful;
         }
 
-        public void closeConnection()
+        private void closeConnection()
         {
             if (conn != null)
-                conn.Close();
+            {
+                try
+                {
+                    conn.Close();
+                }
+                catch
+                {
+                    conn = null; 
+                }
+            }
+                
+            conn = null;
         }
 
         public void Dispose()
         {
-            closeConnection();
+            workerToManagerNeedConnection = false;
+            connShop.Join();
         }
     }
 }

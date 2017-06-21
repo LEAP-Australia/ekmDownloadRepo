@@ -42,6 +42,8 @@ namespace ekmDownloadRepo
 
                     var failedToDownload = new List<string>();
 
+                    //List<string> prevDownloadedFiles = getExistingFiles(rootDiskPath);
+
                     foreach(var filePath in filePaths)
                     {
                         var dirParts = filePath.Split('/');
@@ -49,16 +51,26 @@ namespace ekmDownloadRepo
                             System.IO.Path.Combine(dirParts.Take(dirParts.Length - 1).ToArray()));
 
                         Console.Write("Attempting to download: {0}...", filePath);
-                        if (!ekmMgr.downloadFile(filePath, dirPath))
+                        bool dlSuccess = false;
+                        try
+                        {
+                            dlSuccess = ekmMgr.downloadFile(filePath, dirPath);
+                        }
+                        catch(Exception e)
+                        {
+                            Console.WriteLine("{0}", e);
+                        }
+
+                        if (dlSuccess)
+                        {
+                            Console.WriteLine("Success!");
+                            
+                        }
+                        else
                         {
                             failedToDownload.Add(filePath);
                             Console.WriteLine("Failed!");
                         }
-                        else
-                        {
-                            Console.WriteLine("Success!");
-                        }
-                           
                     }
 
                     using (var failedObjFile = new System.IO.StreamWriter(failLogFile, true))
@@ -78,6 +90,48 @@ namespace ekmDownloadRepo
             {
                 Console.Write("Something went wrong. This may help. Good luck\n\n{0}", e.Message);
             }
+        }
+
+        private static List<string> getExistingFiles(string parentPath, string rootPath = null)
+        {
+            if (rootPath == null)
+                rootPath = parentPath;
+
+            var repoFiles = new List<string>();
+            var fileListing = System.IO.Directory.GetFiles(parentPath);
+
+            var baseParts = rootPath.Split(System.IO.Path.DirectorySeparatorChar);
+
+            var wbPrjFiles = new List<string[]>();
+
+            foreach(var file in fileListing)
+            {
+                var fileParts = file.Split(System.IO.Path.DirectorySeparatorChar);
+                repoFiles.Add("/" + String.Join("/", fileParts.Skip(baseParts.Length)));
+                if (fileParts.Last().Split('.').Last().Equals("wbpj", StringComparison.CurrentCultureIgnoreCase))
+                    wbPrjFiles.Add(fileParts);
+            }
+
+            var wbPrjDir = new List<string>();
+
+            foreach(var file in wbPrjFiles)
+            {
+                var fileNameParts = file.Last().Split('.');
+                var dirName = String.Join(".", fileNameParts.Take(fileNameParts.Length - 1)) + "_files";
+
+                var dirParts = file.Take(file.Length - 1).ToList();
+                dirParts.Add(dirName);
+
+                wbPrjDir.Add(String.Join(System.IO.Path.DirectorySeparatorChar.ToString(), dirParts).ToLower());
+            }
+
+            foreach(var dir in System.IO.Directory.GetDirectories(parentPath))
+            {
+                if (!wbPrjDir.Contains(dir.ToLower()))
+                    repoFiles.AddRange(getExistingFiles(dir, rootPath));
+            }
+
+            return repoFiles;
         }
     }
 }
