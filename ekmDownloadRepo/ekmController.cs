@@ -40,30 +40,6 @@ namespace ekmDownloadRepo
             lastFailed = new List<string>();
         }
 
-        //public void createConnection()
-        //{
-        //    Exception ex = null;
-
-        //    for (uint i = 0; i < limitCount; ++i)
-        //    {
-        //        try
-        //        {
-        //            conn = ConnectionFactory.Open(hostName, userName, password);
-        //            dataMgr = conn.GetDataManager();
-        //            adminMgr = conn.GetAdministrationManager();
-        //            lastFailed = new List<string>();
-        //            return;
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            ex = e;
-        //            Console.WriteLine("**** Failed to Connect Attempting to reconnect in 5min for {0} out of {1} attempt", i, limitCount);
-        //            Thread.Sleep(300000);
-        //        }
-        //    }
-        //    throw ex;
-        //}
-
         private void connectionManager()
         {
             var counter = 0;
@@ -104,11 +80,11 @@ namespace ekmDownloadRepo
                             Console.WriteLine("**** Failed to Connect:\n{0}\nWill Try again", e.Message);
                             counter++;
                         }
-                        catch
+                        catch(Exception e)
                         {
                             managerToWorkerConnIsValid = false;
-                            break;
-                            
+                            Console.WriteLine("**** Failed to Connect with unknown exception:\n{0}\nOf Type {1}\nWill Try again", e.Message, e.GetType());
+                            counter++;
                         }
                     }
                 }
@@ -119,7 +95,7 @@ namespace ekmDownloadRepo
                     break;
                 }
                 if (counter > 720)
-                    throw new Exception("Conn Manager timmed out");
+                    throw new Exception("Conn Manager timed out");
 
                 System.Threading.Thread.Sleep(5000);
             }
