@@ -27,6 +27,9 @@ namespace ekmDownloadRepo
         private Thread connShop = null;
 
         private const uint limitCount = 10;
+        private const int managerFreq = 500;
+        private const int workerFreq = 2000;
+        private const int counterLimit = 7200;
 
         public ekmController(string hostname, string username, string passwd)
         {
@@ -65,6 +68,7 @@ namespace ekmDownloadRepo
                     }
                     else
                     {
+                        managerToWorkerConnIsValid = false;
                         closeConnection();
                         try
                         {
@@ -76,13 +80,11 @@ namespace ekmDownloadRepo
                         }
                         catch (ConnectionException e)
                         {
-                            managerToWorkerConnIsValid = false;
                             Console.WriteLine("**** Failed to Connect:\n{0}\nWill Try again", e.Message);
                             counter++;
                         }
                         catch(Exception e)
                         {
-                            managerToWorkerConnIsValid = false;
                             Console.WriteLine("**** Failed to Connect with unknown exception:\n{0}\nOf Type {1}\nWill Try again", e.Message, e.GetType());
                             counter++;
                         }
@@ -94,10 +96,9 @@ namespace ekmDownloadRepo
                     managerToWorkerConnIsValid = false;
                     break;
                 }
-                if (counter > 720)
+                if (counter > counterLimit)
                     throw new Exception("Conn Manager timed out");
-
-                System.Threading.Thread.Sleep(5000);
+                System.Threading.Thread.Sleep(managerFreq);
             }
         }
 
@@ -110,7 +111,7 @@ namespace ekmDownloadRepo
 
             while(!managerToWorkerConnIsValid)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(workerFreq);
             }
 
             var objectPaths = new List<string>();
@@ -141,14 +142,14 @@ namespace ekmDownloadRepo
             return objectPaths;            
         }
 
-        public bool downloadFile(string repoPath, string diskPath)
+        public bool downloadFile(string repoPath, string diskPath, bool furtherCalls=true)
         {
             if (!connShop.IsAlive)
                 return false;
 
             while (!managerToWorkerConnIsValid)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(workerFreq);
             }
 
             bool successful = false;
@@ -160,12 +161,28 @@ namespace ekmDownloadRepo
                 listener.WaitForTransferToEnd();
                 successful = true;
             }
-            catch
+            catch(Exception e)
             {
-                successful = false;
+                if(furtherCalls)
+                {
+                    Console.WriteLine(
+                        "\nUnable to download file. Reason\n{0}\n{1}.\nResetting connection",
+                        e.Message, e.GetType());
+                    closeConnection();
+                    Thread.Sleep(workerFreq);
+                    successful = downloadFile(repoPath, diskPath, false);
+                }
+                else
+                {
+                    Console.WriteLine(
+                        "\nUnable to download file. Reason\n{0}\n{1}",
+                        e.Message, e.GetType());
+                    successful = false;
+                }
             }
             return successful;
         }
+
 
         private void closeConnection()
         {
